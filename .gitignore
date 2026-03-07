@@ -1,0 +1,23 @@
+# GRASS database (large, machine-specific)
+grass/
+
+# Downloaded data
+data/srtm/*.tif
+data/srtm/*.aux.xml
+data/osm/*.gpkg
+data/osm/*.geojson
+data/osm/*.json
+data/boundary/*.geojson
+
+# Pipeline outputs
+output/*/
+output/*.zip
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
