@@ -48,7 +48,26 @@ echo "==> Output:     ${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}"
 
 # ── Tile list ─────────────────────────────────────────────────────────────────
-TILES=("${DATA_DIR}"/*.tif)
+if [[ -n "${BBOX_S:-}" && -n "${BBOX_W:-}" && -n "${BBOX_N:-}" && -n "${BBOX_E:-}" ]]; then
+    _tile_list=$(python3 - <<PYEOF
+import math, os, sys
+data_dir = "${DATA_DIR}"
+for lat in range(math.floor(${BBOX_S}), math.floor(${BBOX_N}) + 1):
+    for lon in range(math.floor(${BBOX_W}), math.floor(${BBOX_E}) + 1):
+        ns = "N" if lat >= 0 else "S"
+        ew = "E" if lon >= 0 else "W"
+        fname = f"{ns}{abs(lat):02d}{ew}{abs(lon):03d}.tif"
+        path = os.path.join(data_dir, fname)
+        if os.path.exists(path):
+            print(path)
+        else:
+            print(f"WARNING: expected tile not found: {path}", file=sys.stderr)
+PYEOF
+)
+    IFS=$'\n' read -r -d '' -a TILES <<< "${_tile_list}"$'\0' || true
+else
+    TILES=("${DATA_DIR}"/*.tif)
+fi
 if [[ ${#TILES[@]} -eq 0 || ! -f "${TILES[0]}" ]]; then
     echo "ERROR: No .tif files in ${DATA_DIR}" >&2; exit 1
 fi
@@ -63,6 +82,21 @@ echo "==> ${TILE_COUNT} SRTM tile(s)"
 if [[ ! -d "${GRASS_DB}/${LOCATION}" ]]; then
     echo "==> Creating GRASS location ${LOCATION} (EPSG:${GRASS_EPSG}) …"
     "${GRASS_BIN}" -c epsg:${GRASS_EPSG} "${GRASS_DB}/${LOCATION}" -e
+fi
+
+# ── Convert bbox to UTM for GRASS region clip ─────────────────────────────────
+if [[ -n "${BBOX_S:-}" && -n "${BBOX_W:-}" && -n "${BBOX_N:-}" && -n "${BBOX_E:-}" ]]; then
+    _utm=$(python3 -c "
+from pyproj import Transformer
+t = Transformer.from_crs('EPSG:4326', 'EPSG:${GRASS_EPSG}', always_xy=True)
+w, s = t.transform(${BBOX_W}, ${BBOX_S})
+e, n = t.transform(${BBOX_E}, ${BBOX_N})
+print(f'{s-5000:.1f} {w-5000:.1f} {n+5000:.1f} {e+5000:.1f}')
+")
+    read -r UTM_CLIP_S UTM_CLIP_W UTM_CLIP_N UTM_CLIP_E <<< "${_utm}"
+    CLIP_TO_BBOX=true
+else
+    CLIP_TO_BBOX=false
 fi
 
 # ── Run GRASS batch ───────────────────────────────────────────────────────────
@@ -88,6 +122,11 @@ fi
 
 echo "--- Setting region from DEM extent ---"
 g.region raster=srtm_utm res=30
+
+if [[ "${CLIP_TO_BBOX}" == "true" ]]; then
+    echo "--- Clipping region to bbox (+ 5 km buffer) ---"
+    g.region n=${UTM_CLIP_N} s=${UTM_CLIP_S} e=${UTM_CLIP_E} w=${UTM_CLIP_W} align=srtm_utm
+fi
 
 # ── 2. Land mask: elevation > 0 ───────────────────────────────────────────────
 echo "--- Building land mask (elev > 0) ---"

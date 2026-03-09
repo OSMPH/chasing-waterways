@@ -4,7 +4,7 @@ Identify unmapped waterways in the Philippines by comparing terrain-modeled stre
 
 ## How it works
 
-1. **Download** — fetch Copernicus DEM 30m tiles and OSM waterways for the target area via Overpass API.
+1. **Download** — fetch Copernicus DEM 30m tiles and OSM waterways for the target area via Overpass API (or a local file via `--osm-file`).
 2. **Model streams** — run a hydrological analysis in GRASS GIS (flow accumulation → stream extraction → Strahler order).
 3. **Overlay** — intersect modeled streams and OSM waterways with a 200 m grid; compute total mapped length per cell.
 4. **Score gaps** — compute `delta_m = modeled_length − osm_length` per cell; assign priority (low / medium / high) based on density and stream order.
@@ -39,6 +39,7 @@ bash run_pipeline.sh --name <slug> --bbox "<S> <W> <N> <E>" [options]
 | `--threshold` | 200 | Flow accumulation threshold (cells) for stream extraction |
 | `--cell-size` | 200 | Grid cell size in metres |
 | `--skip-download` | off | Skip download step if data already present |
+| `--osm-file` | off | Path to local OSM file (`.pbf`, `.gpkg`, `.shp`, `.geojson`); skips Overpass |
 
 ### Examples
 
@@ -51,6 +52,14 @@ bash run_pipeline.sh --name siquijor --bbox "9.0 123.4 9.4 123.8" --threshold 50
 
 # Different island
 bash run_pipeline.sh --name catanduanes --bbox "13.4791 123.9807 14.1459 124.4971"
+
+# Large area — use Geofabrik PBF instead of Overpass (avoids timeout)
+bash run_pipeline.sh --name luzon --bbox "13.5 119.5 18.7 122.5" \
+  --osm-file /path/to/philippines-latest.osm.pbf
+
+# PBF + skip DEM re-download if tiles already cached
+bash run_pipeline.sh --name luzon --bbox "13.5 119.5 18.7 122.5" \
+  --osm-file /path/to/philippines-latest.osm.pbf --skip-download
 ```
 
 Output is written to `output/<name>/gap_analysis.geojson`.
@@ -104,6 +113,7 @@ The `grass/` GRASS database is created at runtime and is gitignored.
 ## Notes
 
 - DEM tiles are cached in `data/srtm/` and reused across runs. Multiple areas in the same UTM zone share tiles without conflict.
-- The pipeline processes the full extent of all DEM tiles in `data/srtm/`, not just the target bbox. Cell counts therefore include surrounding land within the same tile(s).
+- When invoked via `run_pipeline.sh`, only the tiles that cover the target bbox are imported. The GRASS computational region is then clipped to the bbox + 5 km buffer, so grid cells and stream analysis are confined to the target area rather than the full tile extent.
 - Stream threshold of 200 cells ≈ 0.18 km² contributing area. Increase to 500–1000 for noisier/flatter terrain.
 - Copernicus DEM 30m is available from a public AWS S3 bucket — no authentication required.
+- For large areas (e.g. whole Philippines), Overpass times out. Download `philippines-latest.osm.pbf` from [Geofabrik](https://download.geofabrik.de/asia/philippines.html) and pass it via `--osm-file`; the pipeline filters and clips it automatically.

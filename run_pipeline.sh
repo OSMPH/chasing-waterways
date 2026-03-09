@@ -5,10 +5,13 @@
 # Usage:
 #   bash run_pipeline.sh --name <slug> --bbox "<S> <W> <N> <E>"
 #                        [--threshold N] [--cell-size M] [--skip-download]
+#                        [--osm-file <path>]
 #
 # Example:
 #   bash run_pipeline.sh --name siquijor --bbox "9.0 123.4 9.4 123.8"
 #   bash run_pipeline.sh --name leyte --bbox "10.0 124.0 11.5 125.5"
+#   bash run_pipeline.sh --name catanduanes --bbox "13.4791 123.9807 14.1459 124.4971" \
+#     --osm-file /path/to/philippines-latest.osm.pbf
 
 set -euo pipefail
 
@@ -20,6 +23,7 @@ BBOX=""
 THRESHOLD=200
 CELL_SIZE=200
 SKIP_DOWNLOAD=false
+OSM_FILE=""
 
 # ── Arg parsing ───────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -29,6 +33,7 @@ while [[ $# -gt 0 ]]; do
         --threshold)  THRESHOLD="$2";  shift 2 ;;
         --cell-size)  CELL_SIZE="$2";  shift 2 ;;
         --skip-download) SKIP_DOWNLOAD=true; shift ;;
+        --osm-file)   OSM_FILE="$2";   shift 2 ;;
         *) echo "Unknown argument: $1" >&2; exit 1 ;;
     esac
 done
@@ -71,10 +76,39 @@ mkdir -p "${OUTPUT_DIR_OVERRIDE}"
 if [[ "${SKIP_DOWNLOAD}" == "false" ]]; then
     echo ""
     echo "==> [1/3] Downloading data …"
+    if [[ -n "${OSM_FILE}" ]]; then
+        # Pre-create GPKG placeholder so 00_download.sh skips the Overpass OSM step.
+        # The conversion block below will overwrite it with the real data.
+        mkdir -p "${SCRIPT_DIR}/data/osm"
+        touch "${SCRIPT_DIR}/data/osm/waterways_${NAME}.gpkg"
+    fi
     bash "${SCRIPT_DIR}/00_download.sh" --name "${NAME}" --bbox "${BBOX}"
 else
     echo ""
     echo "==> [1/3] Skipping download (--skip-download)"
+fi
+
+# ── OSM file conversion (when --osm-file is provided) ─────────────────────────
+if [[ -n "${OSM_FILE}" ]]; then
+    echo ""
+    echo "==> Converting OSM file to GPKG: ${OSM_FILE}"
+    OUT_GPKG="${SCRIPT_DIR}/data/osm/waterways_${NAME}.gpkg"
+    mkdir -p "${SCRIPT_DIR}/data/osm"
+    if [[ "${OSM_FILE}" == *.pbf ]]; then
+        osmium tags-filter "${OSM_FILE}" w/waterway=river,stream,canal,drain,ditch \
+            -o /tmp/ww_filtered.osm.pbf --overwrite
+        ogr2ogr -f GPKG "${OUT_GPKG}" /tmp/ww_filtered.osm.pbf lines \
+            -nln waterways \
+            -where "waterway IN ('river','stream','canal','drain','ditch')" \
+            -spat "${BBOX_W}" "${BBOX_S}" "${BBOX_E}" "${BBOX_N}" -overwrite
+    else
+        # .gpkg / .shp / .geojson
+        ogr2ogr -f GPKG "${OUT_GPKG}" "${OSM_FILE}" \
+            -nln waterways \
+            -where "waterway IN ('river','stream','canal','drain','ditch')" \
+            -spat "${BBOX_W}" "${BBOX_S}" "${BBOX_E}" "${BBOX_N}" -overwrite
+    fi
+    echo "==> OSM GPKG written: ${OUT_GPKG}"
 fi
 
 # ── Step 2: GRASS hydrology ───────────────────────────────────────────────────
