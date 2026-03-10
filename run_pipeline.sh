@@ -63,12 +63,14 @@ echo "==> Threshold:  ${THRESHOLD} cells"
 echo "==> Cell size:  ${CELL_SIZE} m"
 
 # ── Set env vars for downstream scripts ───────────────────────────────────────
+export NAME
 export GRASS_LOCATION="ph_utm${UTM_ZONE}n"
 export GRASS_EPSG="${GRASS_EPSG}"
 export SRTM_DIR_OVERRIDE="${SCRIPT_DIR}/data/srtm"
 export OSM_WATERWAYS_PATH="${SCRIPT_DIR}/data/osm/waterways_${NAME}.gpkg"
 export OUTPUT_DIR_OVERRIDE="${SCRIPT_DIR}/output/${NAME}"
 export BBOX_S BBOX_W BBOX_N BBOX_E
+export OSM_FILE
 
 mkdir -p "${OUTPUT_DIR_OVERRIDE}"
 
@@ -95,12 +97,14 @@ if [[ -n "${OSM_FILE}" ]]; then
     OUT_GPKG="${SCRIPT_DIR}/data/osm/waterways_${NAME}.gpkg"
     mkdir -p "${SCRIPT_DIR}/data/osm"
     if [[ "${OSM_FILE}" == *.pbf ]]; then
+        TMP_WW=$(mktemp /tmp/ww_XXXXXX.osm.pbf)
         osmium tags-filter "${OSM_FILE}" w/waterway=river,stream,canal,drain,ditch \
-            -o /tmp/ww_filtered.osm.pbf --overwrite
-        ogr2ogr -f GPKG "${OUT_GPKG}" /tmp/ww_filtered.osm.pbf lines \
+            -o "${TMP_WW}" --overwrite
+        ogr2ogr -f GPKG "${OUT_GPKG}" "${TMP_WW}" lines \
             -nln waterways \
             -where "waterway IN ('river','stream','canal','drain','ditch')" \
             -spat "${BBOX_W}" "${BBOX_S}" "${BBOX_E}" "${BBOX_N}" -overwrite
+        rm -f "${TMP_WW}"
     else
         # .gpkg / .shp / .geojson
         ogr2ogr -f GPKG "${OUT_GPKG}" "${OSM_FILE}" \
@@ -110,6 +114,42 @@ if [[ -n "${OSM_FILE}" ]]; then
     fi
     echo "==> OSM GPKG written: ${OUT_GPKG}"
 fi
+
+# ── OSM named lakes from PBF ──────────────────────────────────────────────────
+LAKES_GPKG="${SCRIPT_DIR}/data/osm/lakes_${NAME}.gpkg"
+if [[ -n "${OSM_FILE}" && ! -f "${LAKES_GPKG}" ]]; then
+    echo ""
+    echo "==> Extracting named lakes from OSM file: ${OSM_FILE}"
+    if [[ "${OSM_FILE}" == *.pbf ]]; then
+        TMP_WATER=$(mktemp /tmp/water_XXXXXX.osm.pbf)
+        osmium tags-filter "${OSM_FILE}" wr/natural=water \
+            -o "${TMP_WATER}" --overwrite
+        ogr2ogr -f GPKG "${LAKES_GPKG}" "${TMP_WATER}" multipolygons \
+            -nln lakes \
+            -where "natural = 'water' AND name IS NOT NULL AND (other_tags LIKE '%\"water\"=>\"lake\"%' OR other_tags LIKE '%\"water\"=>\"reservoir\"%' OR other_tags LIKE '%\"water\"=>\"lagoon\"%' OR other_tags LIKE '%\"wikidata\"%')" \
+            -spat "${BBOX_W}" "${BBOX_S}" "${BBOX_E}" "${BBOX_N}" -overwrite 2>/dev/null || true
+        rm -f "${TMP_WATER}"
+    else
+        echo "==> Non-PBF OSM file: attempting direct ogr2ogr for lakes …"
+        ogr2ogr -f GPKG "${LAKES_GPKG}" "${OSM_FILE}" \
+            -nln lakes \
+            -where "natural = 'water' AND name IS NOT NULL" \
+            -spat "${BBOX_W}" "${BBOX_S}" "${BBOX_E}" "${BBOX_N}" -overwrite 2>/dev/null || true
+    fi
+    echo "==> OSM lakes GPKG written: ${LAKES_GPKG}"
+fi
+# Validate: remove empty GPKG (no layers → v.import fails)
+if [[ -f "${LAKES_GPKG}" ]]; then
+    _lake_feat=$(ogrinfo -al -so "${LAKES_GPKG}" 2>/dev/null | awk '/Feature Count/{sum+=$3} END{print sum+0}')
+    if [[ "${_lake_feat}" -eq 0 ]]; then
+        echo "==> No named lakes found in bbox; removing empty GPKG"
+        rm -f "${LAKES_GPKG}"
+        LAKES_GPKG=""
+    else
+        echo "==> ${_lake_feat} named lake feature(s) found"
+    fi
+fi
+export LAKES_GPKG
 
 # ── Step 2: GRASS hydrology ───────────────────────────────────────────────────
 echo ""

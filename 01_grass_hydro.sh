@@ -139,6 +139,26 @@ echo "--- Removing offshore patches (keep areas > 10 km²) ---"
 v.clean input=land_boundary_raw output=land_boundary \
     tool=rmarea threshold=10000000 --overwrite
 
+# ── 2b. Subtract named OSM lakes from land mask ───────────────────────────────
+LAKES_FILE="${LAKES_GPKG:-${SCRIPT_DIR}/data/osm/lakes_${NAME}.gpkg}"
+if [[ -f "\${LAKES_FILE}" ]]; then
+    echo "--- Importing OSM named lake polygons ---"
+    v.import input="\${LAKES_FILE}" output=lake_polygons_raw snap=0.001 --overwrite
+
+    echo "--- Removing small lakes (< 1 km²) ---"
+    v.clean input=lake_polygons_raw output=lake_polygons \
+        tool=rmarea threshold=1000000 --overwrite
+
+    echo "--- Rasterising lake polygons ---"
+    v.to.rast input=lake_polygons output=lake_rast use=val val=1 --overwrite
+
+    echo "--- Removing lake cells from land mask ---"
+    r.mapcalc "land_mask = if(isnull(lake_rast), land_mask, null())" --overwrite
+    echo "--- Lake mask applied ---"
+else
+    echo "--- No lake file at \${LAKES_FILE}; skipping lake mask ---"
+fi
+
 # ── 3. Apply mask and run hydrology ───────────────────────────────────────────
 echo "--- Applying mask ---"
 r.mask -r 2>/dev/null || true
