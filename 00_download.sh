@@ -218,9 +218,11 @@ fi
 LAKES_GPKG="${OSM_DIR}/lakes_${NAME}.gpkg"
 if [[ -f "${LAKES_GPKG}" ]]; then
     echo "==> OSM lakes GPKG already exists: ${LAKES_GPKG}"
+elif [[ -n "${OSM_FILE:-}" ]]; then
+    echo "==> Skipping Overpass lakes download (--osm-file provided; extraction runs in run_pipeline.sh)"
 else
     echo "==> Downloading OSM named water bodies for bbox ${BBOX_S},${BBOX_W},${BBOX_N},${BBOX_E} …"
-    LAKES_QUERY="[out:json][timeout:90];
+    LAKES_QUERY="[out:geojson][timeout:90];
 (
   way[\"natural\"=\"water\"][\"water\"~\"^(lake|reservoir|lagoon)\$\"][\"name\"]
      (${BBOX_S},${BBOX_W},${BBOX_N},${BBOX_E});
@@ -228,10 +230,12 @@ else
      (${BBOX_S},${BBOX_W},${BBOX_N},${BBOX_E});
 );
 out geom;"
+    TMP_LAKES=$(mktemp /tmp/lakes_XXXXXX.geojson)
     curl -s --retry 3 -d "${LAKES_QUERY}" "https://overpass-api.de/api/interpreter" \
-        > /tmp/lakes_raw.geojson
-    ogr2ogr -f GPKG "${LAKES_GPKG}" /tmp/lakes_raw.geojson \
+        > "${TMP_LAKES}"
+    ogr2ogr -f GPKG "${LAKES_GPKG}" "${TMP_LAKES}" \
         -nln lakes --overwrite 2>/dev/null || true
+    rm -f "${TMP_LAKES}"
     echo "==> OSM lakes GPKG written: ${LAKES_GPKG}"
 fi
 
