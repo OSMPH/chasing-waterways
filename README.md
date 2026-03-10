@@ -4,8 +4,8 @@ Identify unmapped waterways in the Philippines by comparing terrain-modeled stre
 
 ## How it works
 
-1. **Download** — fetch Copernicus DEM 30m tiles and OSM waterways for the target area via Overpass API (or a local file via `--osm-file`).
-2. **Model streams** — run a hydrological analysis in GRASS GIS (flow accumulation → stream extraction → Strahler order).
+1. **Download** — fetch Copernicus DEM 30m tiles, OSM waterways, and named lake polygons for the target area via Overpass API (or a local file via `--osm-file`).
+2. **Model streams** — run a hydrological analysis in GRASS GIS (flow accumulation → stream extraction → Strahler order). Named lakes (≥ 1 km²) are masked out before watershed analysis so DEM streams are not routed through large water bodies.
 3. **Overlay** — intersect modeled streams and OSM waterways with a 200 m grid; compute total mapped length per cell.
 4. **Score gaps** — compute `delta_m = modeled_length − osm_length` per cell; assign priority (low / medium / high) based on density and stream order.
 5. **Export** — write `gap_analysis.geojson` (WGS84) for use in tasking platforms.
@@ -117,3 +117,4 @@ The `grass/` GRASS database is created at runtime and is gitignored.
 - Stream threshold of 200 cells ≈ 0.18 km² contributing area. Increase to 500–1000 for noisier/flatter terrain.
 - Copernicus DEM 30m is available from a public AWS S3 bucket — no authentication required.
 - For large areas (e.g. whole Philippines), Overpass times out. Download `philippines-latest.osm.pbf` from [Geofabrik](https://download.geofabrik.de/asia/philippines.html) and pass it via `--osm-file`; the pipeline filters and clips it automatically.
+- Named lake polygons (`lakes_<name>.gpkg`) are cached in `data/osm/` and reused on re-runs. If no named lakes exist in the bbox the step is silently skipped.

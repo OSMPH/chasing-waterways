@@ -214,6 +214,27 @@ PYEOF
     echo "    saved → ${OSM_GPKG}"
 fi
 
+# ── 4. OSM named water bodies (lakes, reservoirs) ────────────────────────────
+LAKES_GPKG="${OSM_DIR}/lakes_${NAME}.gpkg"
+if [[ -f "${LAKES_GPKG}" ]]; then
+    echo "==> OSM lakes GPKG already exists: ${LAKES_GPKG}"
+else
+    echo "==> Downloading OSM named water bodies for bbox ${BBOX_S},${BBOX_W},${BBOX_N},${BBOX_E} …"
+    LAKES_QUERY="[out:json][timeout:90];
+(
+  way[\"natural\"=\"water\"][\"water\"~\"^(lake|reservoir|lagoon)\$\"][\"name\"]
+     (${BBOX_S},${BBOX_W},${BBOX_N},${BBOX_E});
+  relation[\"natural\"=\"water\"][\"water\"~\"^(lake|reservoir|lagoon)\$\"][\"name\"]
+     (${BBOX_S},${BBOX_W},${BBOX_N},${BBOX_E});
+);
+out geom;"
+    curl -s --retry 3 -d "${LAKES_QUERY}" "https://overpass-api.de/api/interpreter" \
+        > /tmp/lakes_raw.geojson
+    ogr2ogr -f GPKG "${LAKES_GPKG}" /tmp/lakes_raw.geojson \
+        -nln lakes --overwrite 2>/dev/null || true
+    echo "==> OSM lakes GPKG written: ${LAKES_GPKG}"
+fi
+
 echo ""
 echo "==> Download complete."
 ls -lh "${SRTM_DIR}"/*.tif 2>/dev/null || true
