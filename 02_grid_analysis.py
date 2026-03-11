@@ -23,8 +23,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
                     datefmt="%H:%M:%S")
 log = logging.getLogger(__name__)
 
-PRIORITY_BINS   = [float("-inf"), 0.002, 0.005, float("inf")]
+PRIORITY_BINS   = [float("-inf"), 0.5, 1.0, float("inf")]  # delta_m / cell_side_m
 PRIORITY_LABELS = ["low", "medium", "high"]
+MIN_STRAHLER    = 2  # exclude headwater-only (strahler=1) gap cells from output
 
 
 def main():
@@ -91,7 +92,8 @@ def main():
     # ── Delta ────────────────────────────────────────────────────────────────
     grid["delta_m"]       = (grid["modeled_length_m"] - grid["osm_length_m"]).clip(lower=0)
     grid["cell_area_m2"]  = grid.geometry.area.round(1)
-    grid["delta_density"] = (grid["delta_m"] / grid["cell_area_m2"]).fillna(0)
+    grid["cell_side_m"]   = grid["cell_area_m2"] ** 0.5
+    grid["delta_density"] = (grid["delta_m"] / grid["cell_side_m"]).fillna(0)
 
     grid["priority"] = pd.cut(
         grid["delta_density"], bins=PRIORITY_BINS, labels=PRIORITY_LABELS
@@ -103,7 +105,10 @@ def main():
         grid.loc[mask_upgrade, "priority"] = "high"
 
     # ── Filter, reproject, export ─────────────────────────────────────────────
-    output = grid[grid["delta_m"] > 0].copy()
+    mask = grid["delta_m"] > 0
+    if "max_strahler" in grid.columns:
+        mask &= grid["max_strahler"] >= MIN_STRAHLER
+    output = grid[mask].copy()
     log.info("Cells with delta > 0: %d / %d", len(output), len(grid))
 
     for col in ["modeled_length_m", "osm_length_m", "delta_m", "delta_density"]:
@@ -111,7 +116,7 @@ def main():
 
     extra_cols = ["max_strahler"] if "max_strahler" in output.columns else []
     output = output[["cat", "modeled_length_m", "osm_length_m", "delta_m",
-                      "delta_density", "cell_area_m2", "priority"] + extra_cols + ["geometry"]]
+                      "delta_density", "cell_area_m2", "cell_side_m", "priority"] + extra_cols + ["geometry"]]
     output = output.to_crs("EPSG:4326")
     output.to_file(str(out_path), driver="GeoJSON")
 
