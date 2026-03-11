@@ -89,7 +89,7 @@ Cells with `max_strahler ≥ 3` and `delta_m > 0` are promoted to **high** regar
 
 ## OSM waterway types included
 
-`river`, `stream`, `canal`, `drain`, `ditch`
+`river`, `stream`, `canal`, `drain`, `ditch`, `tidal_channel`
 
 ## Folder structure
 

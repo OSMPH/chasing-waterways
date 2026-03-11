@@ -154,7 +154,7 @@ else
 
     WATERWAY_QUERY="[out:json][timeout:90];
 (
-  way[\"waterway\"~\"^(river|stream|canal|drain|ditch)\$\"]
+  way[\"waterway\"~\"^(river|stream|canal|drain|ditch|tidal_channel)\$\"]
      (${BBOX_S},${BBOX_W},${BBOX_N},${BBOX_E});
 );
 out geom;"

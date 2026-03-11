@@ -98,18 +98,18 @@ if [[ -n "${OSM_FILE}" ]]; then
     mkdir -p "${SCRIPT_DIR}/data/osm"
     if [[ "${OSM_FILE}" == *.pbf ]]; then
         TMP_WW=$(mktemp /tmp/ww_XXXXXX.osm.pbf)
-        osmium tags-filter "${OSM_FILE}" w/waterway=river,stream,canal,drain,ditch \
+        osmium tags-filter "${OSM_FILE}" w/waterway=river,stream,canal,drain,ditch,tidal_channel \
             -o "${TMP_WW}" --overwrite
         ogr2ogr -f GPKG "${OUT_GPKG}" "${TMP_WW}" lines \
             -nln waterways \
-            -where "waterway IN ('river','stream','canal','drain','ditch')" \
+            -where "waterway IN ('river','stream','canal','drain','ditch','tidal_channel')" \
             -spat "${BBOX_W}" "${BBOX_S}" "${BBOX_E}" "${BBOX_N}" -overwrite
         rm -f "${TMP_WW}"
     else
         # .gpkg / .shp / .geojson
         ogr2ogr -f GPKG "${OUT_GPKG}" "${OSM_FILE}" \
             -nln waterways \
-            -where "waterway IN ('river','stream','canal','drain','ditch')" \
+            -where "waterway IN ('river','stream','canal','drain','ditch','tidal_channel')" \
             -spat "${BBOX_W}" "${BBOX_S}" "${BBOX_E}" "${BBOX_N}" -overwrite
     fi
     echo "==> OSM GPKG written: ${OUT_GPKG}"
