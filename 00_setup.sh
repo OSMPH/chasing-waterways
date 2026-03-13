@@ -19,4 +19,4 @@ GRASS=/Applications/GRASS-8.4.app/Contents/Resources/bin/grass
 
 echo ""
 echo "All dependencies installed."
-echo "Next step: bash 00_download_siquijor.sh"
+echo "Next step: bash 00_download.sh"
