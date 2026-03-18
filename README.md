@@ -5,7 +5,7 @@ Identify unmapped waterways in the Philippines by comparing terrain-modeled stre
 ## How it works
 
 1. **Download** — fetch Copernicus DEM 30m tiles, OSM waterways, and named lake polygons for the target area via Overpass API (or a local file via `--osm-file`).
-2. **Model streams** — run a hydrological analysis in GRASS GIS (flow accumulation → stream extraction → Strahler order). Named lakes (≥ 1 km²) are masked out before watershed analysis so DEM streams are not routed through large water bodies.
+2. **Model streams** — run a hydrological analysis in GRASS GIS using single-flow-direction (D8) routing (flow accumulation → stream extraction → Strahler order). Named lakes (≥ 1 km²) are masked out before watershed analysis so DEM streams are not routed through large water bodies. Optionally, OSM waterways are burned into the DEM (`--carve`) before watershed analysis so the modeled network follows known channels.
 3. **Overlay** — intersect modeled streams and OSM waterways with a 200 m grid; compute total mapped length per cell.
 4. **Score gaps** — compute `delta_m = modeled_length − osm_length` per cell; assign priority (low / medium / high) based on density and stream order.
 5. **Export** — write `gap_analysis.geojson` (WGS84) for use in tasking platforms.
@@ -40,6 +40,9 @@ bash run_pipeline.sh --name <slug> --bbox "<S> <W> <N> <E>" [options]
 | `--cell-size` | 200 | Grid cell size in metres |
 | `--skip-download` | off | Skip download step if data already present |
 | `--osm-file` | off | Path to local OSM file (`.pbf`, `.gpkg`, `.shp`, `.geojson`); skips Overpass |
+| `--carve` | off | Burn OSM waterways into DEM before watershed analysis; improves alignment of modeled streams with mapped channels |
+| `--carve-width` | 90 | Width of carved channel in metres (should be ≥ 30 — one DEM pixel) |
+| `--carve-depth` | 5.0 | Depth of carved channel in metres |
 
 ### Examples
 
@@ -60,6 +63,11 @@ bash run_pipeline.sh --name luzon --bbox "13.5 119.5 18.7 122.5" \
 # PBF + skip DEM re-download if tiles already cached
 bash run_pipeline.sh --name luzon --bbox "13.5 119.5 18.7 122.5" \
   --osm-file /path/to/philippines-latest.osm.pbf --skip-download
+
+# Recommended for Philippines runs: OSM stream burning
+bash run_pipeline.sh --name ilocos-norte --bbox "17.675 120.339 18.680 120.987" \
+  --osm-file philippines-latest.osm.pbf --skip-download --cell-size 500 \
+  --carve
 ```
 
 Output is written to `output/<name>/gap_analysis.geojson`.
@@ -72,7 +80,7 @@ Output is written to `output/<name>/gap_analysis.geojson`.
 | `modeled_length_m` | Total DEM-modeled stream length in cell (m) |
 | `osm_length_m` | Total OSM-mapped waterway length in cell (m) |
 | `delta_m` | Gap in metres (`modeled − osm`, clipped to 0) |
-| `delta_density` | `delta_m / cell_area_m²` — comparable across edge cells |
+| `delta_density` | `delta_m / cell_side_m` — scale-invariant gap density (same value in 200 m or 500 m cells for equal gap length) |
 | `cell_area_m2` | Cell area (m²) — partial for edge cells |
 | `max_strahler` | Highest Strahler stream order in cell |
 | `priority` | `low` / `medium` / `high` |
@@ -81,9 +89,9 @@ Output is written to `output/<name>/gap_analysis.geojson`.
 
 | `delta_density` | Priority |
 |---|---|
-| 0 – 0.002 m/m² | low |
-| 0.002 – 0.005 m/m² | medium |
-| > 0.005 m/m² | high |
+| 0 – 0.5 | low |
+| 0.5 – 1.0 | medium |
+| > 1.0 | high |
 
 Cells with `max_strahler ≥ 3` and `delta_m > 0` are promoted to **high** regardless of density — significant tributaries are never buried in low/medium.
 
@@ -118,3 +126,5 @@ The `grass/` GRASS database is created at runtime and is gitignored.
 - Copernicus DEM 30m is available from a public AWS S3 bucket — no authentication required.
 - For large areas (e.g. whole Philippines), Overpass times out. Download `philippines-latest.osm.pbf` from [Geofabrik](https://download.geofabrik.de/asia/philippines.html) and pass it via `--osm-file`; the pipeline filters and clips it automatically.
 - Named lake polygons (`lakes_<name>.gpkg`) are cached in `data/osm/` and reused on re-runs. If no named lakes exist in the bbox the step is silently skipped.
+- `--carve` burns OSM waterways into the DEM before watershed analysis using `r.carve`. This improves main-stem alignment significantly on flat/coastal terrain. Width must be ≥ 30 m (one DEM pixel) to have any effect; the default 90 m (3 pixels) gives reliable results.
+- `--carve` is off by default so existing single-island runs reproduce unchanged results.
