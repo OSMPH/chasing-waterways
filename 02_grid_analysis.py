@@ -23,9 +23,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
                     datefmt="%H:%M:%S")
 log = logging.getLogger(__name__)
 
-PRIORITY_BINS   = [float("-inf"), 0.5, 1.0, float("inf")]  # delta_m / cell_side_m
-PRIORITY_LABELS = ["low", "medium", "high"]
-MIN_STRAHLER    = 2  # exclude headwater-only (strahler=1) gap cells from output
+PRIORITY_BINS          = [float("-inf"), 0.5, 1.0, float("inf")]  # delta_m / cell_side_m
+PRIORITY_LABELS        = ["low", "medium", "high"]
+MIN_STRAHLER           = 2     # exclude headwater-only (strahler=1) gap cells from output
+STRAHLER_UPGRADE_MIN   = 4     # strahler ≥ this → auto "high" (was 3; calibrated 2026-03-18)
+COVERAGE_CAP           = 0.7   # if osm/modeled > this AND strahler < STRAHLER_UPGRADE_MIN → medium
+
 
 
 def main():
@@ -99,10 +102,22 @@ def main():
         grid["delta_density"], bins=PRIORITY_BINS, labels=PRIORITY_LABELS
     ).astype(str).replace("nan", "low")
 
-    # Upgrade to "high" if max_strahler >= 3 and there is any gap
+    # Upgrade to "high" if max_strahler >= STRAHLER_UPGRADE_MIN and there is any gap
     if "max_strahler" in grid.columns:
-        mask_upgrade = (grid["max_strahler"] >= 3) & (grid["delta_m"] > 0)
+        mask_upgrade = (grid["max_strahler"] >= STRAHLER_UPGRADE_MIN) & (grid["delta_m"] > 0)
         grid.loc[mask_upgrade, "priority"] = "high"
+
+        # Coverage cap: downgrade high → medium if OSM already covers most of the modeled
+        # length and strahler is below upgrade threshold (indicates drift, not true gap)
+        grid["coverage_ratio"] = (
+            grid["osm_length_m"] / grid["modeled_length_m"].replace(0, float("nan"))
+        ).fillna(0)
+        mask_cap = (
+            (grid["coverage_ratio"] > COVERAGE_CAP)
+            & (grid["max_strahler"] < STRAHLER_UPGRADE_MIN)
+            & (grid["priority"] == "high")
+        )
+        grid.loc[mask_cap, "priority"] = "medium"
 
     # ── Filter, reproject, export ─────────────────────────────────────────────
     mask = grid["delta_m"] > 0
@@ -114,7 +129,12 @@ def main():
     for col in ["modeled_length_m", "osm_length_m", "delta_m", "delta_density"]:
         output[col] = output[col].round(3)
 
-    extra_cols = ["max_strahler"] if "max_strahler" in output.columns else []
+    extra_cols = []
+    if "max_strahler" in output.columns:
+        extra_cols.append("max_strahler")
+    if "coverage_ratio" in output.columns:
+        output["coverage_ratio"] = output["coverage_ratio"].round(3)
+        extra_cols.append("coverage_ratio")
     output = output[["cat", "modeled_length_m", "osm_length_m", "delta_m",
                       "delta_density", "cell_area_m2", "cell_side_m", "priority"] + extra_cols + ["geometry"]]
     output = output.to_crs("EPSG:4326")
