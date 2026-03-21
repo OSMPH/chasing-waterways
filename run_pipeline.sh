@@ -38,7 +38,7 @@ while [[ $# -gt 0 ]]; do
         --cell-size)  CELL_SIZE="$2";  shift 2 ;;
         --skip-download) SKIP_DOWNLOAD=true; shift ;;
         --osm-file)   OSM_FILE="$2";   shift 2 ;;
---mexp)       STREAM_MEXP="$2";   shift 2 ;;
+        --mexp)       STREAM_MEXP="$2";   shift 2 ;;
         --carve)      USE_CARVE=true;     shift ;;
         --carve-width)  CARVE_WIDTH="$2";  shift 2 ;;
         --carve-depth)  CARVE_DEPTH="$2";  shift 2 ;;

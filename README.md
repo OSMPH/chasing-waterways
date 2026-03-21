@@ -43,6 +43,7 @@ bash run_pipeline.sh --name <slug> --bbox "<S> <W> <N> <E>" [options]
 | `--carve` | off | Burn OSM waterways into DEM before watershed analysis; improves alignment of modeled streams with mapped channels |
 | `--carve-width` | 90 | Width of carved channel in metres (should be ≥ 30 — one DEM pixel) |
 | `--carve-depth` | 5.0 | Depth of carved channel in metres |
+| `--mexp` | 0 | Montgomery–Foufoula–Georgiou exponent for `r.stream.extract`; 0 disables (standard flow accumulation threshold) |
 
 ### Examples
 

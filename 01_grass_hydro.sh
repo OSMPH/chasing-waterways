@@ -176,7 +176,7 @@ if [[ "${USE_CARVE}" == "true" ]]; then
 
     echo "--- [carve] r.carve: burning OSM channels into DEM ---"
     r.carve raster=srtm_utm vector=osm_waterways \
-        output=srtm_carved width=${CARVE_WIDTH} depth=${CARVE_DEPTH} -n --overwrite
+        output=srtm_carved width="${CARVE_WIDTH}" depth="${CARVE_DEPTH}" -n --overwrite
 
     echo "--- [carve] Replacing srtm_utm with carved DEM ---"
     g.rename raster=srtm_carved,srtm_utm --overwrite
