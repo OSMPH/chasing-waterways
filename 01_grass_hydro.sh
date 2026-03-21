@@ -275,7 +275,7 @@ echo "--- Exporting accum.tif ---"
 r.out.gdal input=accum output="${OUTPUT_DIR}/accum.tif" \
     format=GTiff createopt="COMPRESS=LZW,TILED=YES" --overwrite
 
-echo "--- Exporting streams.gpkg ---"
+echo "--- Exporting streams.gpkg (UTM) ---"
 v.out.ogr input=streams_lines output="${OUTPUT_DIR}/streams.gpkg" \
     format=GPKG --overwrite
 
@@ -288,6 +288,11 @@ echo "--- GRASS complete ---"
 echo "    modeled_by_cell.csv  → \$(wc -l < "${OUTPUT_DIR}/modeled_by_cell.csv") rows"
 echo "    osm_by_cell.csv      → \$(wc -l < "${OUTPUT_DIR}/osm_by_cell.csv") rows"
 GRASS_SCRIPT
+
+echo "--- Reprojecting streams to WGS84 ---"
+ogr2ogr -f GPKG -t_srs EPSG:4326 \
+    "${OUTPUT_DIR}/streams_wgs84.gpkg" \
+    "${OUTPUT_DIR}/streams.gpkg" -overwrite
 
 echo ""
 echo "==> GRASS done. Next step:"
