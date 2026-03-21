@@ -32,6 +32,10 @@ GRASS_EPSG="${GRASS_EPSG:-32651}"
 OSM_WATERWAYS="${OSM_WATERWAYS_PATH:-${SCRIPT_DIR}/data/osm/waterways_siquijor.gpkg}"
 OUTPUT_DIR="${OUTPUT_DIR_OVERRIDE:-${SCRIPT_DIR}/output}"
 GRASS_DB="${GRASS_DB_OVERRIDE:-${SCRIPT_DIR}/grass}"
+STREAM_MEXP="${STREAM_MEXP:-0}"
+USE_CARVE="${USE_CARVE:-false}"
+CARVE_WIDTH="${CARVE_WIDTH:-90}"
+CARVE_DEPTH="${CARVE_DEPTH:-5.0}"
 
 GRASS_BIN="/Applications/GRASS-8.4.app/Contents/Resources/bin/grass"
 if [[ ! -x "${GRASS_BIN}" ]]; then
@@ -99,6 +103,12 @@ else
     CLIP_TO_BBOX=false
 fi
 
+# ── Pre-compute mexp arg for r.stream.extract ─────────────────────────────────
+_MEXP_ARG=""
+if [[ "${STREAM_MEXP}" != "0" && -n "${STREAM_MEXP}" ]]; then
+    _MEXP_ARG="mexp=${STREAM_MEXP}"
+fi
+
 # ── Run GRASS batch ───────────────────────────────────────────────────────────
 "${GRASS_BIN}" "${GRASS_DB}/${LOCATION}/${MAPSET}" --exec bash <<GRASS_SCRIPT
 set -euo pipefail
@@ -159,6 +169,19 @@ else
     echo "--- No lake file at \${LAKES_FILE}; skipping lake mask ---"
 fi
 
+# ── 2c. Optional: carve OSM waterways into DEM ───────────────────────────────
+if [[ "${USE_CARVE}" == "true" ]]; then
+    echo "--- [carve] Importing OSM waterways for stream burning ---"
+    v.import input="${OSM_WATERWAYS}" output=osm_waterways snap=0.001 --overwrite
+
+    echo "--- [carve] r.carve: burning OSM channels into DEM ---"
+    r.carve raster=srtm_utm vector=osm_waterways \
+        output=srtm_carved width="${CARVE_WIDTH}" depth="${CARVE_DEPTH}" -n --overwrite
+
+    echo "--- [carve] Replacing srtm_utm with carved DEM ---"
+    g.rename raster=srtm_carved,srtm_utm --overwrite
+fi
+
 # ── 3. Apply mask and run hydrology ───────────────────────────────────────────
 echo "--- Applying mask ---"
 r.mask -r 2>/dev/null || true
@@ -166,17 +189,15 @@ r.mask raster=land_mask --overwrite
 
 echo "--- r.watershed (SFD, threshold=${THRESHOLD}) ---"
 r.watershed -s \
-    elevation=srtm_utm \
-    accumulation=accum \
-    drainage=drain \
-    threshold=${THRESHOLD} \
-    --overwrite
+    elevation=srtm_utm accumulation=accum drainage=drain \
+    threshold=${THRESHOLD} --overwrite
 
 echo "--- r.stream.extract ---"
 r.stream.extract \
     elevation=srtm_utm \
     accumulation=accum \
     threshold=${THRESHOLD} \
+    ${_MEXP_ARG} \
     stream_raster=streams_rast \
     stream_vector=streams_vect \
     direction=drain \
@@ -196,7 +217,11 @@ r.stream.order \
     --overwrite
 
 echo "--- Extracting lines only from stream vector ---"
-v.extract input=streams_vect output=streams_lines type=line --overwrite
+v.extract input=streams_vect output=streams_lines_raw type=line --overwrite
+
+echo "--- Smoothing stream lines (Chaiken) ---"
+v.generalize input=streams_lines_raw output=streams_lines \
+    method=chaiken threshold=60 --overwrite
 
 echo "--- Removing mask ---"
 r.mask -r
@@ -210,8 +235,12 @@ v.select ainput=grid_full binput=land_boundary \
     operator=overlap output=grid_land --overwrite
 
 # ── 5. Import OSM waterways (v.import reprojects to UTM) ─────────────────────
-echo "--- Importing OSM waterways ---"
-v.import input="${OSM_WATERWAYS}" output=osm_waterways snap=0.001 --overwrite
+if [[ "${USE_CARVE}" != "true" ]]; then
+    echo "--- Importing OSM waterways ---"
+    v.import input="${OSM_WATERWAYS}" output=osm_waterways snap=0.001 --overwrite
+else
+    echo "--- OSM waterways already imported by r.carve; skipping ---"
+fi
 
 # ── 6. Overlay modeled streams × grid ─────────────────────────────────────────
 echo "--- Overlaying modeled streams with grid ---"

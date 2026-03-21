@@ -24,6 +24,10 @@ THRESHOLD=200
 CELL_SIZE=200
 SKIP_DOWNLOAD=false
 OSM_FILE=""
+STREAM_MEXP=0
+USE_CARVE=false
+CARVE_WIDTH=90
+CARVE_DEPTH=5.0
 
 # ── Arg parsing ───────────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -34,6 +38,10 @@ while [[ $# -gt 0 ]]; do
         --cell-size)  CELL_SIZE="$2";  shift 2 ;;
         --skip-download) SKIP_DOWNLOAD=true; shift ;;
         --osm-file)   OSM_FILE="$2";   shift 2 ;;
+        --mexp)       STREAM_MEXP="$2";   shift 2 ;;
+        --carve)      USE_CARVE=true;     shift ;;
+        --carve-width)  CARVE_WIDTH="$2";  shift 2 ;;
+        --carve-depth)  CARVE_DEPTH="$2";  shift 2 ;;
         *) echo "Unknown argument: $1" >&2; exit 1 ;;
     esac
 done
@@ -61,6 +69,8 @@ echo "==> BBox:       S=${BBOX_S} W=${BBOX_W} N=${BBOX_N} E=${BBOX_E}"
 echo "==> UTM zone:   ${UTM_ZONE}  (EPSG:${GRASS_EPSG})"
 echo "==> Threshold:  ${THRESHOLD} cells"
 echo "==> Cell size:  ${CELL_SIZE} m"
+echo "==> mexp:       ${STREAM_MEXP}"
+echo "==> Carve OSM:  ${USE_CARVE} (width=${CARVE_WIDTH}m depth=${CARVE_DEPTH}m)"
 
 # ── Set env vars for downstream scripts ───────────────────────────────────────
 export NAME
@@ -71,6 +81,7 @@ export OSM_WATERWAYS_PATH="${SCRIPT_DIR}/data/osm/waterways_${NAME}.gpkg"
 export OUTPUT_DIR_OVERRIDE="${SCRIPT_DIR}/output/${NAME}"
 export BBOX_S BBOX_W BBOX_N BBOX_E
 export OSM_FILE
+export STREAM_MEXP USE_CARVE CARVE_WIDTH CARVE_DEPTH
 
 mkdir -p "${OUTPUT_DIR_OVERRIDE}"
 
