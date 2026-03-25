@@ -116,12 +116,7 @@ def main():
     for col in ["modeled_length_m", "osm_length_m", "delta_m", "delta_density"]:
         output[col] = output[col].round(3)
 
-    extra_cols = []
-    if "max_strahler" in output.columns:
-        extra_cols.append("max_strahler")
-    if "coverage_ratio" in output.columns:
-        output["coverage_ratio"] = output["coverage_ratio"].round(3)
-        extra_cols.append("coverage_ratio")
+    extra_cols = ["max_strahler"] if "max_strahler" in output.columns else []
     output = output[["cat", "modeled_length_m", "osm_length_m", "delta_m",
                       "delta_density", "coverage_ratio", "cell_area_m2", "cell_side_m",
                       "priority"] + extra_cols + ["geometry"]]
