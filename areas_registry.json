@@ -1,0 +1,7 @@
+{
+  "siquijor":    { "dir": "siquijor",           "bbox": [123.4,    9.0,   123.8,   9.4]  },
+  "catanduanes": { "dir": "catanduanes",         "bbox": [123.9807,13.4791,124.4971,14.1459] },
+  "ilocos-norte":{ "dir": "ilocos-norte", "bbox": [120.339, 17.675, 120.987,18.680] },
+  "mindoro":     { "dir": "mindoro",             "bbox": [120.284, 12.120, 121.597,13.545] },
+  "basilan-sulu-tawitawi":     { "dir": "basilan-sulu-tawitawi",             "bbox": [119.300, 4.493, 122.354, 6.806] }
+}
