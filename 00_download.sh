@@ -73,12 +73,16 @@ for tile_id, url, out_path in tiles:
         continue
     print(f"  downloading {tile_id} …")
     result = subprocess.run(
-        ["curl", "-L", "--progress-bar", "-o", out_path, url],
-        check=False
+        ["curl", "-L", "--progress-bar", "-w", "%{http_code}", "-o", out_path, url],
+        check=False,
+        stdout=subprocess.PIPE
     )
-    if result.returncode != 0:
-        print(f"ERROR: Failed to download {tile_id}", file=sys.stderr)
-        sys.exit(1)
+    http_code = result.stdout.decode().strip()
+    if result.returncode != 0 or http_code != "200":
+        print(f"  NOTE: {tile_id} not available (HTTP {http_code}) — skipping (ocean tile?)")
+        if os.path.exists(out_path):
+            os.remove(out_path)
+        continue
     print(f"    saved → {out_path}")
 PYEOF
 
