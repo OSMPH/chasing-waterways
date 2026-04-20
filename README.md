@@ -82,7 +82,6 @@ Output is written to `output/<name>/gap_analysis.geojson`.
 | `osm_length_m` | Total OSM-mapped waterway length in cell (m) |
 | `delta_m` | Gap in metres (`modeled − osm`, clipped to 0) |
 | `delta_density` | `delta_m / cell_side_m` — scale-invariant gap density (same value in 200 m or 500 m cells for equal gap length) |
-| `coverage_ratio` | `osm_length_m / modeled_length_m` — fraction of modeled stream already in OSM (0–1+) |
 | `cell_area_m2` | Cell area (m²) — partial for edge cells |
 | `max_strahler` | Highest Strahler stream order in cell |
 | `priority` | `low` / `medium` / `high` |
