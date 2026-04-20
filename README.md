@@ -7,7 +7,7 @@ Identify unmapped waterways in the Philippines by comparing terrain-modeled stre
 1. **Download** — fetch Copernicus DEM 30m tiles, OSM waterways, and named lake polygons for the target area via Overpass API (or a local file via `--osm-file`).
 2. **Model streams** — run a hydrological analysis in GRASS GIS using single-flow-direction (D8) routing (flow accumulation → stream extraction → Strahler order). Named lakes (≥ 1 km²) are masked out before watershed analysis so DEM streams are not routed through large water bodies. Optionally, OSM waterways are burned into the DEM (`--carve`) before watershed analysis so the modeled network follows known channels.
 3. **Overlay** — intersect modeled streams and OSM waterways with a 200 m grid; compute total mapped length per cell.
-4. **Score gaps** — compute `delta_m = modeled_length − osm_length` per cell; assign priority (low / medium / high) based on gap density and OSM coverage ratio. Only cells with `max_strahler ≥ 3` are included — order 1–2 streams are visible in the tile layer and don't need explicit tasks.
+4. **Score gaps** — compute `delta_m = modeled_length − osm_length` per cell; assign priority (low / medium / high) based on gap density and OSM coverage ratio. Cells with `max_strahler ≥ 3` are always included. Strahler 1–2 cells are included if they are coastal-independent (drain directly to sea without joining a higher-order network).
 5. **Export** — write `gap_analysis.geojson` (WGS84) for use in tasking platforms.
 
 ## Dependencies
@@ -89,7 +89,9 @@ Output is written to `output/<name>/gap_analysis.geojson`.
 
 ### Priority logic
 
-Only cells with `max_strahler ≥ 3` and `delta_m > 0` appear in the output. Order 1–2 streams are visible in the tile layer.
+Cells appear in the output if `delta_m > 0` and either:
+- `max_strahler ≥ 3`, or
+- `max_strahler ≤ 2` and the cell is **coastal-independent** — strahler 1–2 streams whose downstream path reaches the sea without passing through a strahler ≥ 3 segment (complete small drainages, not headwaters feeding a larger network).
 
 Priority is assigned in two steps:
 
@@ -104,7 +106,7 @@ If `coverage_ratio > 0.4` → priority = **low**
 | 0.5 – 1.0 | medium |
 | > 1.0 | high |
 
-Calibrated against MapRoulette review ground truth (n=1,221 reviewed tasks, Ilocos Norte + Siquijor). Coverage gate precision 74.6%, recall 59.2%, F1=0.660 on strahler≥3 subset. High-tier precision 80.7%.
+Calibrated against MapRoulette review ground truth (n=6,576 non-skipped reviews across Ilocos Norte, Siquijor, and Basilan). Coverage gate Youden-optimal at cap=0.3 (J=0.48); current cap=0.4 is conservative but stable across OSM-dense and OSM-sparse areas.
 
 ## OSM waterway types included
 
