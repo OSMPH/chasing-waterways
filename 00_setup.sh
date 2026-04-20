@@ -4,11 +4,17 @@
 
 set -euo pipefail
 
-echo "==> Installing osmium-tool …"
-arch -arm64 brew install osmium-tool
+echo "==> Installing brew packages …"
+for pkg in osmium-tool tippecanoe; do
+    if arch -arm64 brew list "$pkg" &>/dev/null; then
+        echo "    $pkg already installed, skipping"
+    else
+        arch -arm64 brew install "$pkg"
+    fi
+done
 
 echo "==> Installing Python geo packages …"
-pip3 install geopandas rasterio shapely pandas numpy pyproj
+pip3 install --quiet geopandas rasterio shapely pandas numpy pyproj boto3
 
 echo "==> Checking ogr2ogr …"
 ogr2ogr --version | head -1

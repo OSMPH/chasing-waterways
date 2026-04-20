@@ -107,6 +107,67 @@ If `coverage_ratio > 0.4` → priority = **low**
 
 Calibrated against MapRoulette review ground truth (n=6,576 non-skipped reviews across Ilocos Norte, Siquijor, and Basilan). Coverage gate Youden-optimal at cap=0.3 (J=0.48); current cap=0.4 is conservative but stable across OSM-dense and OSM-sparse areas.
 
+## Tile export (Mapbox)
+
+After one or more pipeline runs complete, use `export_tiles.sh` to merge all area stream vectors into a single MBTiles file and optionally publish it to a Mapbox tileset.
+
+### Setup (one-time, included in `00_setup.sh`)
+
+```bash
+arch -arm64 brew install tippecanoe
+pip3 install mapbox-tilesets
+```
+
+### Register completed areas
+
+Edit `areas_registry.json` to add each completed run:
+
+```json
+{
+  "siquijor":     { "dir": "siquijor",           "bbox": [123.4, 9.0, 123.8, 9.4] },
+  "catanduanes":  { "dir": "catanduanes",         "bbox": [123.9807, 13.4791, 124.4971, 14.1459] }
+}
+```
+
+- **`dir`** — subfolder under `output/` containing `streams_wgs84.gpkg`
+- **`bbox`** — `[W, S, E, N]` used to clip streams before merging; prevents overlap at area boundaries
+
+Each pipeline run also writes `output/<name>/metadata.json`. Pass `--auto` to discover these automatically without editing the registry.
+
+### Run
+
+```bash
+# Dry run — produces output/tiles/streams_ph.mbtiles
+bash export_tiles.sh
+
+# Upload to Mapbox
+MAPBOX_ACCESS_TOKEN=pk.xxx MAPBOX_USERNAME=myuser \
+  bash export_tiles.sh --upload --tileset myuser.streams-ph
+```
+
+| Option | Description |
+|---|---|
+| `--upload` | Upload to Mapbox after generating MBTiles |
+| `--tileset` | Mapbox tileset ID (required with `--upload`) |
+| `--registry` | Path to registry JSON (default: `areas_registry.json`) |
+| `--auto` | Auto-discover completed runs via `output/*/metadata.json` |
+
+Tiles are generated at zoom 8–14. Each feature carries `strahler` and `source_area` attributes for use in Mapbox style rules. To include additional attributes (e.g. `length`, `gradient`), edit the `SQL=` line in `export_tiles.sh`.
+
+### Folder structure (updated)
+
+```
+├── export_tiles.sh        tile export + Mapbox upload
+├── areas_registry.json    area slug → output dir + bbox
+└── output/
+    ├── <name>/
+    │   ├── streams_wgs84.gpkg   WGS84 stream lines (written by pipeline)
+    │   ├── metadata.json        run metadata for auto-discovery
+    │   └── gap_analysis.geojson
+    └── tiles/
+        └── streams_ph.mbtiles  merged tile output
+```
+
 ## OSM waterway types included
 
 `river`, `stream`, `canal`, `drain`, `ditch`, `tidal_channel`
@@ -120,12 +181,19 @@ Calibrated against MapRoulette review ground truth (n=6,576 non-skipped reviews 
 ├── 00_download.sh         download DEM tiles + OSM data for any bbox
 ├── 01_grass_hydro.sh      GRASS GIS spatial pipeline
 ├── 02_grid_analysis.py    gap scoring and GeoJSON export
+├── export_tiles.sh        merge streams → MBTiles → Mapbox upload
+├── areas_registry.json    area slug → output dir + bbox for tile export
 ├── data/
 │   ├── srtm/              Copernicus DEM 30m tiles (shared cache, gitignored)
-│   ├── osm/               OSM waterway files per area (gitignored)
+│   ├── osm/               OSM waterway + lake files per area (gitignored)
 │   └── boundary/          Admin boundaries (gitignored)
 └── output/
-    └── <name>/            Per-area outputs including gap_analysis.geojson
+    ├── <name>/            Per-area outputs
+    │   ├── gap_analysis.geojson
+    │   ├── streams_wgs84.gpkg
+    │   └── metadata.json
+    └── tiles/
+        └── streams_ph.mbtiles
 ```
 
 The `grass/` GRASS database is created at runtime and is gitignored.
@@ -137,6 +205,6 @@ The `grass/` GRASS database is created at runtime and is gitignored.
 - Stream threshold of 200 cells ≈ 0.18 km² contributing area. Increase to 500–1000 for noisier/flatter terrain.
 - Copernicus DEM 30m is available from a public AWS S3 bucket — no authentication required.
 - For large areas (e.g. whole Philippines), Overpass times out. Download `philippines-latest.osm.pbf` from [Geofabrik](https://download.geofabrik.de/asia/philippines.html) and pass it via `--osm-file`; the pipeline filters and clips it automatically.
-- Named lake polygons (`lakes_<name>.gpkg`) are cached in `data/osm/` and reused on re-runs. If no named lakes exist in the bbox the step is silently skipped.
+- Named lake polygons (`lakes_<name>.gpkg`) are re-extracted from the PBF on every run when `--osm-file` is provided. If no named lakes exist in the bbox the step is silently skipped.
 - `--carve` burns OSM waterways into the DEM before watershed analysis using `r.carve`. This improves main-stem alignment significantly on flat/coastal terrain. Width must be ≥ 30 m (one DEM pixel) to have any effect; the default 90 m (3 pixels) gives reliable results.
 - `--carve` is off by default so existing single-island runs reproduce unchanged results.

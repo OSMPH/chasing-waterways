@@ -128,7 +128,7 @@ fi
 
 # ── OSM named lakes from PBF ──────────────────────────────────────────────────
 LAKES_GPKG="${SCRIPT_DIR}/data/osm/lakes_${NAME}.gpkg"
-if [[ -n "${OSM_FILE}" && ! -f "${LAKES_GPKG}" ]]; then
+if [[ -n "${OSM_FILE}" ]]; then
     echo ""
     echo "==> Extracting named lakes from OSM file: ${OSM_FILE}"
     if [[ "${OSM_FILE}" == *.pbf ]]; then
@@ -172,6 +172,7 @@ echo ""
 echo "==> [3/3] Computing gap scores …"
 python3 "${SCRIPT_DIR}/02_grid_analysis.py" --output-dir "${OUTPUT_DIR_OVERRIDE}"
 
+python3 -c "import json; json.dump({'name':'${NAME}','bbox':[${BBOX_W},${BBOX_S},${BBOX_E},${BBOX_N}]}, open('${OUTPUT_DIR_OVERRIDE}/metadata.json','w'))"
 echo ""
 echo "==> Pipeline complete."
 echo "    Output: ${OUTPUT_DIR_OVERRIDE}/gap_analysis.geojson"
