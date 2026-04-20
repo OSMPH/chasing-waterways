@@ -132,6 +132,8 @@ def main():
     log.info("  %d cells have OSM waterways", len(osm))
 
     # ── Merge ────────────────────────────────────────────────────────────────
+    assert modeled["cat"].is_unique, "duplicate b_cat in modeled_by_cell.csv"
+    assert osm["cat"].is_unique,     "duplicate b_cat in osm_by_cell.csv"
     grid = grid.merge(modeled, on="cat", how="left")
     grid = grid.merge(osm,     on="cat", how="left")
     grid["modeled_length_m"] = grid["modeled_length_m"].fillna(0)
