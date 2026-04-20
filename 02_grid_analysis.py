@@ -150,7 +150,7 @@ def main():
 
     grid["priority"] = pd.cut(
         grid["delta_density"], bins=PRIORITY_BINS, labels=PRIORITY_LABELS
-    ).astype(str).replace("nan", "low")
+    ).astype(str)
 
     # Coverage gate: already well-mapped cells → "low"
     grid.loc[grid["coverage_ratio"] > COVERAGE_CAP, "priority"] = "low"
