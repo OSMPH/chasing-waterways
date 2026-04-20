@@ -29,6 +29,55 @@ MIN_STRAHLER    = 3  # strahler 1–2 visible in tiles; task grid starts at orde
 COVERAGE_CAP    = 0.4  # osm/modeled > this → "low" (stream already well-mapped)
 
 
+def coastal_independent_cats(streams_path: Path, grid: gpd.GeoDataFrame) -> set:
+    """Return grid cell cat values containing coastal-independent strahler ≤2 streams.
+
+    A strahler ≤2 stream is coastal-independent if walking next_stream reaches an outlet
+    (next_stream == -1) without passing through a strahler ≥3 segment.
+    Falls back to empty set if streams_wgs84.gpkg is absent.
+    """
+    if not streams_path.exists():
+        log.warning("streams_wgs84.gpkg not found at %s — skipping coastal-independent CI classification", streams_path)
+        return set()
+
+    streams = gpd.read_file(streams_path, on_invalid="ignore")
+    streams = streams[~streams.geometry.isna() & streams.geometry.is_valid]
+    strahler_map = dict(zip(streams["stream"], streams["strahler"]))
+    next_map     = dict(zip(streams["stream"], streams["next_stream"]))
+
+    def trace(start_id):
+        cur     = int(next_map.get(start_id, -1))
+        visited = {start_id}
+        for _ in range(200):
+            if cur == -1 or cur not in strahler_map:
+                return "coastal_independent"
+            if strahler_map[cur] >= 3:
+                return "headwater"
+            if cur in visited:
+                return "headwater"
+            visited.add(cur)
+            cur = int(next_map.get(cur, -1))
+        return "headwater"
+
+    s12 = streams[streams["strahler"] <= 2].copy()
+    s12["classification"] = s12["stream"].apply(trace)
+
+    grid_for_join = grid[["cat", "geometry"]].rename(columns={"cat": "cell_cat"})
+    s12_utm = s12.to_crs(grid.crs)
+    joined = gpd.sjoin(
+        s12_utm[["stream", "classification", "geometry"]],
+        grid_for_join, how="left", predicate="intersects"
+    )
+
+    ci_cats = (
+        joined[joined["classification"] == "coastal_independent"]["cell_cat"]
+        .dropna().astype(int).unique()
+    )
+    n_ci = len(ci_cats)
+    log.info("  coastal-independent strahler 1-2 cells: %d", n_ci)
+    return set(ci_cats)
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser()
@@ -107,9 +156,15 @@ def main():
     grid.loc[grid["coverage_ratio"] > COVERAGE_CAP, "priority"] = "low"
 
     # ── Filter, reproject, export ─────────────────────────────────────────────
+    streams_path = output_dir / "streams_wgs84.gpkg"
+    ci_cats = coastal_independent_cats(streams_path, grid) if "max_strahler" in grid.columns else set()
+
     mask = grid["delta_m"] > 0
     if "max_strahler" in grid.columns:
-        mask &= grid["max_strahler"] >= MIN_STRAHLER
+        mask &= (
+            (grid["max_strahler"] >= MIN_STRAHLER) |
+            ((grid["max_strahler"] <= 2) & grid["cat"].isin(ci_cats))
+        )
     output = grid[mask].copy()
     log.info("Cells with delta > 0: %d / %d", len(output), len(grid))
 
