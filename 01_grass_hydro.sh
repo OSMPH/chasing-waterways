@@ -126,6 +126,10 @@ echo "--- Mosaic or rename ---"
 if [[ ${TILE_COUNT} -gt 1 ]]; then
     g.region raster="${TILE_NAMES_CSV}" res=30
     r.patch input="${TILE_NAMES_CSV}" output=srtm_utm --overwrite
+    echo "--- Filling seam nulls between tiles (r.grow radius=1.5) ---"
+    r.grow input=srtm_utm output=srtm_utm_filled radius=1.5 --overwrite
+    r.mapcalc "srtm_utm = if(isnull(srtm_utm), srtm_utm_filled, srtm_utm)" --overwrite
+    g.remove -f type=raster name=srtm_utm_filled
 else
     g.rename raster="${TILE_NAMES_CSV},srtm_utm" --overwrite
 fi

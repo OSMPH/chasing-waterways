@@ -23,9 +23,59 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
                     datefmt="%H:%M:%S")
 log = logging.getLogger(__name__)
 
-PRIORITY_BINS   = [float("-inf"), 0.5, 1.0, float("inf")]  # delta_m / cell_side_m
+PRIORITY_BINS   = [float("-inf"), 0.5, 1.0, float("inf")]  # delta_density bins
 PRIORITY_LABELS = ["low", "medium", "high"]
-MIN_STRAHLER    = 2  # exclude headwater-only (strahler=1) gap cells from output
+MIN_STRAHLER    = 3  # strahler 1–2 visible in tiles; task grid starts at order-3+
+COVERAGE_CAP    = 0.4  # osm/modeled > this → "low" (stream already well-mapped)
+
+
+def coastal_independent_cats(streams_path: Path, grid: gpd.GeoDataFrame) -> set:
+    """Return grid cell cat values containing coastal-independent strahler ≤2 streams.
+
+    A strahler ≤2 stream is coastal-independent if walking next_stream reaches an outlet
+    (next_stream == -1) without passing through a strahler ≥3 segment.
+    Falls back to empty set if streams_wgs84.gpkg is absent.
+    """
+    if not streams_path.exists():
+        log.warning("streams_wgs84.gpkg not found at %s — skipping coastal-independent CI classification", streams_path)
+        return set()
+
+    streams = gpd.read_file(streams_path, on_invalid="ignore")
+    streams = streams[~streams.geometry.isna() & streams.geometry.is_valid]
+    strahler_map = dict(zip(streams["stream"], streams["strahler"]))
+    next_map     = dict(zip(streams["stream"], streams["next_stream"]))
+
+    def trace(start_id):
+        cur     = int(next_map.get(start_id, -1))
+        visited = {start_id}
+        for _ in range(200):
+            if cur == -1 or cur not in strahler_map:
+                return "coastal_independent"
+            if strahler_map[cur] >= 3:
+                return "headwater"
+            if cur in visited:
+                return "headwater"
+            visited.add(cur)
+            cur = int(next_map.get(cur, -1))
+        return "headwater"
+
+    s12 = streams[streams["strahler"] <= 2].copy()
+    s12["classification"] = s12["stream"].apply(trace)
+
+    grid_for_join = grid[["cat", "geometry"]].rename(columns={"cat": "cell_cat"})
+    s12_utm = s12.to_crs(grid.crs)
+    joined = gpd.sjoin(
+        s12_utm[["stream", "classification", "geometry"]],
+        grid_for_join, how="left", predicate="intersects"
+    )
+
+    ci_cats = (
+        joined[joined["classification"] == "coastal_independent"]["cell_cat"]
+        .dropna().astype(int).unique()
+    )
+    n_ci = len(ci_cats)
+    log.info("  coastal-independent strahler 1-2 cells: %d", n_ci)
+    return set(ci_cats)
 
 
 def main():
@@ -82,6 +132,8 @@ def main():
     log.info("  %d cells have OSM waterways", len(osm))
 
     # ── Merge ────────────────────────────────────────────────────────────────
+    assert modeled["cat"].is_unique, "duplicate b_cat in modeled_by_cell.csv"
+    assert osm["cat"].is_unique,     "duplicate b_cat in osm_by_cell.csv"
     grid = grid.merge(modeled, on="cat", how="left")
     grid = grid.merge(osm,     on="cat", how="left")
     grid["modeled_length_m"] = grid["modeled_length_m"].fillna(0)
@@ -90,24 +142,31 @@ def main():
         grid["max_strahler"] = grid["max_strahler"].fillna(1).astype(int)
 
     # ── Delta ────────────────────────────────────────────────────────────────
-    grid["delta_m"]       = (grid["modeled_length_m"] - grid["osm_length_m"]).clip(lower=0)
-    grid["cell_area_m2"]  = grid.geometry.area.round(1)
-    grid["cell_side_m"]   = grid["cell_area_m2"] ** 0.5
-    grid["delta_density"] = (grid["delta_m"] / grid["cell_side_m"]).fillna(0)
+    grid["delta_m"]        = (grid["modeled_length_m"] - grid["osm_length_m"]).clip(lower=0)
+    grid["cell_area_m2"]   = grid.geometry.area.round(1)
+    grid["cell_side_m"]    = grid["cell_area_m2"] ** 0.5
+    grid["delta_density"]  = (grid["delta_m"] / grid["cell_side_m"]).fillna(0)
+    grid["coverage_ratio"] = (
+        grid["osm_length_m"] / grid["modeled_length_m"].replace(0, float("nan"))
+    ).fillna(0).round(3)
 
     grid["priority"] = pd.cut(
         grid["delta_density"], bins=PRIORITY_BINS, labels=PRIORITY_LABELS
-    ).astype(str).replace("nan", "low")
+    ).astype(str)
 
-    # Upgrade to "high" if max_strahler >= 3 and there is any gap
-    if "max_strahler" in grid.columns:
-        mask_upgrade = (grid["max_strahler"] >= 3) & (grid["delta_m"] > 0)
-        grid.loc[mask_upgrade, "priority"] = "high"
+    # Coverage gate: already well-mapped cells → "low"
+    grid.loc[grid["coverage_ratio"] > COVERAGE_CAP, "priority"] = "low"
 
     # ── Filter, reproject, export ─────────────────────────────────────────────
+    streams_path = output_dir / "streams_wgs84.gpkg"
+    ci_cats = coastal_independent_cats(streams_path, grid) if "max_strahler" in grid.columns else set()
+
     mask = grid["delta_m"] > 0
     if "max_strahler" in grid.columns:
-        mask &= grid["max_strahler"] >= MIN_STRAHLER
+        mask &= (
+            (grid["max_strahler"] >= MIN_STRAHLER) |
+            ((grid["max_strahler"] <= 2) & grid["cat"].isin(ci_cats))
+        )
     output = grid[mask].copy()
     log.info("Cells with delta > 0: %d / %d", len(output), len(grid))
 
@@ -116,7 +175,8 @@ def main():
 
     extra_cols = ["max_strahler"] if "max_strahler" in output.columns else []
     output = output[["cat", "modeled_length_m", "osm_length_m", "delta_m",
-                      "delta_density", "cell_area_m2", "cell_side_m", "priority"] + extra_cols + ["geometry"]]
+                      "delta_density", "coverage_ratio", "cell_area_m2", "cell_side_m",
+                      "priority"] + extra_cols + ["geometry"]]
     output = output.to_crs("EPSG:4326")
     output.to_file(str(out_path), driver="GeoJSON")
 
