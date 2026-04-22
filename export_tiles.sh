@@ -129,9 +129,11 @@ while IFS=$'\t' read -r name dir w s e n; do
     echo "    [clip] ${name} (bbox: W=${w} S=${s} E=${e} N=${n})"
     # To include more attributes, add columns to the SELECT (available: length, gradient, horton, shreve, …)
     SQL="SELECT geom, strahler, '${name}' AS source_area FROM streams_lines"
+    # 0.02° buffer keeps full stream geometry for grid cells at area boundaries
     ogr2ogr \
         -f GeoJSON \
-        -spat "${w}" "${s}" "${e}" "${n}" \
+        -spat "$(echo "${w} - 0.02" | bc)" "$(echo "${s} - 0.02" | bc)" \
+              "$(echo "${e} + 0.02" | bc)" "$(echo "${n} + 0.02" | bc)" \
         -sql "${SQL}" \
         "${out}" \
         "${gpkg}" 2>/dev/null
